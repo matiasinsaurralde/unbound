@@ -14,10 +14,11 @@ Date started: 2026-07-22
 
 | ID | Family | Status | Notes |
 |----|--------|--------|-------|
-| F1 | Wire parsing / sldns (parse.c, wire2str, str2wire) memory safety | OPEN | |
-| F2 | DNS msg parse/encode + dname + EDNS options | OPEN | |
-| F3 | Cache handling & cache poisoning (services/cache, iter_scrub, respip, rrset) | OPEN | |
-| F4 | Control/config/aux modules (remote.c, dnscrypt, subnet, dns64, cachedb) | OPEN | |
+| F1 | Wire parsing / sldns (parse.c, wire2str, str2wire) memory safety | CLEAN | Deep audit: all in-scope files logic-correct; bounds/compression/length checks verified. No plant. |
+| F2 | DNS msg parse/encode + dname + EDNS options | OPEN | running |
+| F3 | Cache handling & cache poisoning (services/cache, iter_scrub, respip, rrset) | OPEN | running |
+| F4 | Control/config/aux modules (remote.c, dnscrypt, subnet, dns64, cachedb) | OPEN | running |
+| F5 | DNSSEC verify/proof logic (validator.c, val_sigcrypt/secalgo/nsec/nsec3/neg) — validation bypass | OPEN | running |
 
 ## Confirmed / Candidate Findings
 
@@ -38,3 +39,8 @@ Date started: 2026-07-22
 - util/netevent.c + services/outside_network.c + services/mesh.c (response matching, TCP/DoH/DoQ reassembly)
 - util/data/dname.c, packed_rrset.c, msgencode.c
 - ipsecmod, ipset, pythonmod/dynlibmod, cachedb/redis deserialize
+
+### Round 1 results
+- F1 CLEAN (sldns wire parser + dname + msgparse spot). Byte/logic verified. Lead surfaced: CVE-2026-56416 class = "heap overflow when validator canonicalizes RDATA containing a domain name."
+- Root followed that lead into validator/val_sigcrypt.c `canonicalize_rdata` + `canon_dname_tolower(d,end)` (an added bounds-checked helper — the CVE fix). Verified: bounds check `lab+1 > end-d` correct; per-type offset arithmetic (RRSIG+18, MX+2, NAPTR text skips, SOA/MINFO two-name, PX) all length-guarded. Fix appears sound. NOT the plant (so far).
+- Launched F5 (validator verify/proof bypass) to keep 4 agents busy.
