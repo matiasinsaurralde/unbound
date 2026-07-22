@@ -151,6 +151,14 @@ Floors at 0 (no underflow). Fix: delete the redundant dec at 2704.
   different-data path (`services/cache/rrset.c:173`). Contained because NS RRset is independently
   pinned, forcing re-delegation. Watch-item only.
 
+## Cleared surfaces (deep-audited, no exploitable bug)
+- DoH/HTTP2 server path + TCP-reuse teardown: hardened; qbuffer/rbuffer + mesh/h2_stream
+  pointer lifecycle correct. No DoQ-analog offset bug.
+- DoQ RECEIVE reassembly (`doq_stream_recv_data`): HIGH-confidence memory-safe; writes bounded by
+  the single unchanging `inlen`, ngtcp2 `offset` arg ignored, `nread` provably in [2, inlen+2].
+- RPZ wildcard synth, ZONEMD digest gen: bounded.
+- (in progress) iterator CNAME/delegation + val_neg rbtree; DoQ handshake/retry/CID + ngtcp2 asserts.
+
 ## Verified PRESENT & COMPLETE fixes (first-principles)
 56416, 55973, 50248, 44690, 44687, 50252, 50243, 50046, 55717, 56444, 46582, 40691, 55990,
 54478, and the 4 DoQ CVEs 14586/32665/41637/55991. Tree carries the full 1.25.2 fix set.
