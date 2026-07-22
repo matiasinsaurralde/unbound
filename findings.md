@@ -46,9 +46,27 @@ principles. The CVE list = map of fragile subsystems to hunt for *residual/adjac
   (serve-expired + response-ip CNAME crash)
 - Cookie/proxy: 54478 ; libunbound: 44621
 
+## Fix-completeness verification (first-principles, no diffing)
+
+Personally confirmed PRESENT & CORRECT in this tree:
+- CVE-2026-56416 canon RDATA overflow — `val_sigcrypt.c:1088` bounded helper. OK.
+- CVE-2026-55973 dns-error-reporting stack overflow — `services/mesh.c:1682` bounded. OK.
+- CVE-2026-50248 bogus primary XFR — `authzone.c:5896/7055` skip add on bogus; fix-of-fix log OK.
+- CVE-2026-44690 RRSIG.labels wildcard (via F5) — labels range check `val_sigcrypt.c:1680`. OK.
+
+Wave-2 agents verifying remaining clusters (DoQ, serve-expired/respip UAF, DNSCrypt/cookie,
+cache-poisoning off-by-ones). Directive: judge absolute correctness, do NOT diff upstream.
+
+### Dependency-chaining angle (explicit task hint)
+Tree is pristine upstream => intended bug may be a LATENT upstream bug or an EXTERNAL
+dependency reached via unbound. DoQ CVE cluster (14586/32665/41637/55991) all cite
+**libngtcp2** assertions/flow-control — strongest candidate for a remote-DoS chain if a new
+assertion is reachable from crafted QUIC. Candidate deps to clone if leads warrant:
+ngtcp2, nghttp2, openssl, libexpat, libevent, nettle.
+
 ## Confirmed / Candidate Findings
 
-(none yet)
+(none yet — no fabrication; only adversarially-verified bugs will be listed here)
 
 ## Blocked routes
 
