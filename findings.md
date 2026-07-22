@@ -109,6 +109,16 @@ early-free is benign in normal flow but dangerous for the flow-control-blocked t
 `acked_stream_data_offset` can report offset+datalen==outlen with the tail unsent; (c)
 extend_max_stream_data actually re-drives writev; (d) writev_stream dereferences datav[0].base.
 
+ADVERSARIAL CHECK #1 (unbound-side lifecycle refutation) => VERDICT: NOT-REFUTED.
+Confirmed from source: stream is NOT closed before the tail is acked (`doq_stream_recv_fin`
+4221 skips close when query complete; `is_closed` only set in doq_stream_close 3957); acked-cb
+does not early-return (is_closed==0 at 4553); BLOCKED path (5497-5505) preserves nwrite==outlen,
+no reset/drop; remove_out_buffer leaves nwrite & is_answer_available intact; extend_max_stream_data
+gates only on is_answer_available (still 1) with NO out==NULL guard; BOTH callbacks are registered
+(4909 extend_max_stream_data, 4910 acked_stream_data_offset). outlen/nwrite are size_t
+(listen_dnsport.h:688-690) => `outlen - (nwrite-2)` underflows. No unbound-side guard blocks it.
+Remaining dependence: ngtcp2 semantics (ADVERSARIAL CHECK #2, in progress, reads ngtcp2 source).
+
 ### CANDIDATE #2 — double `infra_wait_limit_dec` ⇒ wait-limit (recursion-flood) mitigation bypass
 Status: CONFIRMED (logic), low severity (not memory-unsafe). `services/mesh.c:2704`.
 `mesh_serve_expired_callback` calls `infra_wait_limit_dec` AFTER `mesh_send_reply`, which already
