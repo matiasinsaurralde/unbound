@@ -20,6 +20,32 @@ Date started: 2026-07-22
 | F4 | Control/config/aux modules (remote.c, dnscrypt, subnet, dns64, cachedb) | OPEN | running |
 | F5 | DNSSEC verify/proof logic (validator.c, val_sigcrypt/secalgo/nsec/nsec3/neg) — validation bypass | OPEN | running |
 
+## MAJOR REFRAMING (after Round 1)
+
+Four independent agents (F1/F2/F3/F4) each concluded their scope is **byte-identical to
+upstream unbound master (1.25.3-dev, HEAD 914dbfe)**. The in-tree `doc/Changelog` shows
+the 1.25.2 security release (dated 2026-07-22) fixed ~24 CVEs (CVE-2026-14586 ... 56444).
+I independently verified two memory-corruption fixes ARE present and complete in-tree:
+- CVE-2026-56416 (validator RDATA canonicalize heap overflow): fixed via bounded
+  `canon_dname_tolower(d,end)` in `val_sigcrypt.c:1088`; per-type offset math verified safe.
+- CVE-2026-55973 (dns-error-reporting stack overflow): fixed via `expected_length` tracking
+  + bounded snprintf in `services/mesh.c:1682`; all writes bounded.
+
+=> Not a "planted deviation" model. This is a **genuine 0-day hunt** in pristine unbound.
+The winning bug is a latent upstream bug OR an *incomplete* fix — invisible to upstream-diff.
+NEW DIRECTIVE to agents: DO NOT clone/diff upstream. Judge absolute correctness from first
+principles. The CVE list = map of fragile subsystems to hunt for *residual/adjacent* bugs.
+
+### CVE map (fragile subsystems, from doc/Changelog)
+- DoQ/QUIC + ngtcp2: 14586, 32665, 41637, 55991  (assertions, flow-control, quic-size budget)
+- DNSCrypt: 40691, 55990  (packet of death)
+- Cache poisoning: 42955 (ghost TTL), 44687 (harden-below-nxdomain off-by-one),
+  44690 (RRSIG.labels wildcard cross-zone), 46582 (wildcard replay serve-expired),
+  50252 (source-port mapping), 50243/50248 (bogus primary / rewrite bogus)
+- Memory corruption / UAF: 50046 (DoT jostle UAF), 52863 (memory corruption), 55717
+  (serve-expired + response-ip CNAME crash)
+- Cookie/proxy: 54478 ; libunbound: 44621
+
 ## Confirmed / Candidate Findings
 
 (none yet)
