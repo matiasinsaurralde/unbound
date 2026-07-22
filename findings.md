@@ -162,7 +162,15 @@ Floors at 0 (no underflow). Fix: delete the redundant dec at 2704.
   memmoves sized; NSEC3 b32 buffers bounded. Sharpest edge `val_neg.c:716 wipeout()` (holds
   `next` across neg_delete_data) is correct under the count invariant (freed ancestors are
   canonically < next). Fragile-but-not-a-bug.
-- (in progress) DoQ handshake/retry/CID + reachable ngtcp2 asserts.
+- DoQ handshake/retry/CID + ngtcp2 asserts: no HIGH-confidence crash. CID-len (≤NGTCP2_MAX_CIDLEN
+  20) enforced by ngtcp2 pkt decode before any memcpy/assert; retry/regular token verify bounds
+  ocid to ≤20 post-AEAD; PPE_PENDING pacing asserts unreachable (pacing forced-allowed once ppe set);
+  recv 2-byte-prefix accounting safe. Note: 0-RTT/early-data is ENABLED server-side
+  (listen_dnsport.c:4783/4856), so full query path runs during handshake — larger fuzz surface but
+  no concrete bug. MED-confidence fragile spots (callback reentrancy from inside ngtcp2_conn_read_pkt
+  during 0-RTT; offset-arg ignored relying on ngtcp2 in-order contract) — could not disprove, likely
+  safe (reply is queued not sent inline; stream re-looked-up by id with is_closed check).
+- (in progress, final round) RFC5011 autotrust/anchor; libunbound async API + ECS addrtree + respip.
 
 ## Verified PRESENT & COMPLETE fixes (first-principles)
 56416, 55973, 50248, 44690, 44687, 50252, 50243, 50046, 55717, 56444, 46582, 40691, 55990,
