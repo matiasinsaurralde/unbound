@@ -157,7 +157,12 @@ Floors at 0 (no underflow). Fix: delete the redundant dec at 2704.
 - DoQ RECEIVE reassembly (`doq_stream_recv_data`): HIGH-confidence memory-safe; writes bounded by
   the single unchanging `inlen`, ngtcp2 `offset` arg ignored, `nread` provably in [2, inlen+2].
 - RPZ wildcard synth, ZONEMD digest gen: bounded.
-- (in progress) iterator CNAME/delegation + val_neg rbtree; DoQ handshake/retry/CID + ngtcp2 asserts.
+- Iterator CNAME/delegation + val_neg rbtree + infra/lruhash: no exploitable bug. All chain
+  loops bounded (query_restart/referral/sent/dsns counts); get_cname_target bounded; rrset
+  memmoves sized; NSEC3 b32 buffers bounded. Sharpest edge `val_neg.c:716 wipeout()` (holds
+  `next` across neg_delete_data) is correct under the count invariant (freed ancestors are
+  canonically < next). Fragile-but-not-a-bug.
+- (in progress) DoQ handshake/retry/CID + reachable ngtcp2 asserts.
 
 ## Verified PRESENT & COMPLETE fixes (first-principles)
 56416, 55973, 50248, 44690, 44687, 50252, 50243, 50046, 55717, 56444, 46582, 40691, 55990,
