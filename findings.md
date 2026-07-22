@@ -66,7 +66,66 @@ ngtcp2, nghttp2, openssl, libexpat, libevent, nettle.
 
 ## Confirmed / Candidate Findings
 
-(none yet — no fabrication; only adversarially-verified bugs will be listed here)
+### CANDIDATE #1 (PRIMARY) — DoQ off-by-2 heap free ⇒ remote wild-pointer read / crash (DoS)
+Status: under adversarial verification (ngtcp2 semantics). Confidence MED-HIGH.
+Threat model: any DoQ client (unbound built with libngtcp2 and configured for DNS-over-QUIC).
+Primitive: use-after-free / read from a near-NULL wild pointer inside ngtcp2 ⇒ SIGSEGV ⇒ remote process crash.
+
+Root cause — `services/listen_dnsport.c:4555`, `doq_acked_stream_data_offset_cb`:
+```
+if(offset+datalen >= stream->outlen) {           // should be >= outlen + 2
+    doq_stream_remove_in_buffer(...);
+    doq_stream_remove_out_buffer(...);           // free(out); out=NULL; outlen=0
+}
+```
+The stream wire payload is `outlen_wire`(2-byte TCP-len prefix) + `out`(outlen bytes) = total
+`outlen+2`. Write-done is correctly `nwrite >= outlen+2` (lines 5491/5544), and the send path
+splits the 2-byte prefix from `out` (5449-5461). But the ack-free frees `out` as soon as the
+acked offset reaches `outlen` — i.e. up to 2 bytes before the stream is fully acknowledged.
+`doq_stream_remove_out_buffer` (3939) sets out=NULL, outlen=0, but leaves `is_answer_available=1`
+and `nwrite` unchanged. The send path has NO NULL/`outlen==0` guard:
+```
+} else {  // nwrite >= 2
+    datav[0].base = stream->out + (stream->nwrite-2);   // NULL + (N-2)  → wild pointer
+    datav[0].len  = stream->outlen - (stream->nwrite-2);// 0 - (N-2)     → size_t underflow
+}
+```
+
+Exploit sequence (DoQ client):
+1. Client opens a bidi stream, sends a query, but advertises a per-stream flow-control limit
+   (initial_max_stream_data / MAX_STREAM_DATA) equal to the answer length `N=outlen`.
+2. Server writes stream offsets [0,N) (2-byte prefix + out[0..N-3]); ngtcp2 then returns
+   STREAM_DATA_BLOCKED; `nwrite==N` (< N+2, so NOT write-done); stream taken off write list.
+3. Client ACKs [0,N): `offset+datalen == N >= outlen(N)` ⇒ TRUE ⇒ `out` freed early
+   (out=NULL, outlen=0), is_answer_available still 1.
+4. Client raises MAX_STREAM_DATA to N+2 ⇒ `doq_extend_max_stream_data_cb` (4511) re-adds the
+   stream to the write list (is_answer_available==1).
+5. `doq_conn_write_streams` rebuilds `datav[0].base = NULL+(N-2)`, len underflowed; ngtcp2 is
+   granted 2 bytes of credit and reads from the wild address ⇒ SIGSEGV.
+Fix: `if(offset+datalen >= (uint64_t)stream->outlen + 2)` and/or guard `if(!stream->out) continue;`
+plus clamp `nwrite <= outlen+2` in the write path.
+Open verification items (ngtcp2): (a) ngtcp2 buffers *accepted* stream data internally so the
+early-free is benign in normal flow but dangerous for the flow-control-blocked tail; (b)
+`acked_stream_data_offset` can report offset+datalen==outlen with the tail unsent; (c)
+extend_max_stream_data actually re-drives writev; (d) writev_stream dereferences datav[0].base.
+
+### CANDIDATE #2 — double `infra_wait_limit_dec` ⇒ wait-limit (recursion-flood) mitigation bypass
+Status: CONFIRMED (logic), low severity (not memory-unsafe). `services/mesh.c:2704`.
+`mesh_serve_expired_callback` calls `infra_wait_limit_dec` AFTER `mesh_send_reply`, which already
+decrements it unconditionally at its tail (`mesh.c:1645/1648`). The sibling `mesh_query_done`
+(1892+) does NOT add a trailing dec. Net: each serve-expired reply decrements a client's
+`mesh_wait` twice ⇒ per-IP recursion-concurrency cap (`wait-limit`, default on) is pinned near
+zero ⇒ an attacker using serve-expired-eligible names evades the wait-limit DoS mitigation.
+Floors at 0 (no underflow). Fix: delete the redundant dec at 2704.
+
+### Lower-priority observations (not independently exploitable)
+- A/AAAA glue TTL clamp (ghost-domain) is narrower than NS: not applied on equal-trust
+  different-data path (`services/cache/rrset.c:173`). Contained because NS RRset is independently
+  pinned, forcing re-delegation. Watch-item only.
+
+## Verified PRESENT & COMPLETE fixes (first-principles)
+56416, 55973, 50248, 44690, 44687, 50252, 50243, 50046, 55717, 56444, 46582, 40691, 55990,
+54478, and the 4 DoQ CVEs 14586/32665/41637/55991. Tree carries the full 1.25.2 fix set.
 
 ## Blocked routes
 
