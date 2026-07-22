@@ -66,8 +66,26 @@ ngtcp2, nghttp2, openssl, libexpat, libevent, nettle.
 
 ## Confirmed / Candidate Findings
 
-### CANDIDATE #1 (PRIMARY) — DoQ off-by-2 heap free ⇒ remote wild-pointer read / crash (DoS)
-Status: under adversarial verification (ngtcp2 semantics). Confidence MED-HIGH.
+### CANDIDATE #1 — DoQ off-by-2 heap free ⇒ genuine defect, but IMPACT-LIMITED (see verdict)
+Status: FULLY VERIFIED (2 adversarial agents + ngtcp2 source). Real bug; security impact narrow.
+
+FINAL VERDICT (after ngtcp2-source adversarial check, ngtcp2 HEAD 1770f476):
+The unbound early-free + missing-guard is REAL and remotely reachable (all preconditions hold;
+ngtcp2 semantics confirmed: apps re-supply the un-accepted tail; acked cb fires for [0,outlen)
+with tail unsent; extend_max_stream_data re-arms; writev would memcpy from base). BUT because
+`doq_stream_remove_out_buffer` zeroes `outlen`, `datav[0].len = 0-(nwrite-2)` underflows to ~2^64.
+ngtcp2 checks total vec len vs NGTCP2_MAX_VARINT (2^62-1) in `ngtcp2_vec_len_varint`
+(ngtcp2_conn.c:12146-12148) BEFORE touching `base`, returning NGTCP2_ERR_INVALID_ARGUMENT.
+=> 64-bit builds (standard servers): the call errors out and unbound tears down ONLY the
+   attacker's OWN QUIC connection (`doq_conn_close_error`, listen_dnsport.c:5523+). No process
+   crash, no cross-client DoS. Practically negligible security impact on 64-bit.
+=> 32-bit (ILP32) builds: underflowed len (~2^32) < 2^62 passes the guard; flow control clamps to
+   the 2 granted bytes; 2-byte memcpy from NULL+(N-2) => remote SIGSEGV (real DoS). Rare platform.
+Genuine code defect worth fixing (fix: `>= outlen+2` at 4555 AND `if(!stream->out) continue;` at
+5456), but NOT the universal remote crash first suspected. Reported honestly; NOT the headline.
+
+--- (original analysis retained below) ---
+Confidence MED-HIGH.
 Threat model: any DoQ client (unbound built with libngtcp2 and configured for DNS-over-QUIC).
 Primitive: use-after-free / read from a near-NULL wild pointer inside ngtcp2 ⇒ SIGSEGV ⇒ remote process crash.
 
