@@ -170,7 +170,12 @@ Floors at 0 (no underflow). Fix: delete the redundant dec at 2704.
   no concrete bug. MED-confidence fragile spots (callback reentrancy from inside ngtcp2_conn_read_pkt
   during 0-RTT; offset-arg ignored relying on ngtcp2 in-order contract) — could not disprove, likely
   safe (reply is queued not sent inline; stream re-looked-up by id with is_closed check).
-- (in progress, final round) RFC5011 autotrust/anchor; libunbound async API + ECS addrtree + respip.
+- ECS / edns-subnet / addrtree: memory-safe. `parse_subnet_option` (subnetmod.c:842-854) enforces
+  `opt_len==(source_mask+7)/8+4` and `opt_len-4<=INET6_SIZE`; addr buffer is a fixed uint8_t[16];
+  getbit/bits_common indices bounded by mask<=128; addrtree pruning refetches edges (no UAF/double-free).
+- libunbound async API + tube IPC: length-bounded (de)serialization; pipe is trusted IPC, not
+  attacker-reachable. respip copy/rdata2sockaddr have integer-overflow + rr_len==6/18 guards.
+- (in progress, final round) RFC5011 autotrust/anchor.
 
 ## Verified PRESENT & COMPLETE fixes (first-principles)
 56416, 55973, 50248, 44690, 44687, 50252, 50243, 50046, 55717, 56444, 46582, 40691, 55990,
